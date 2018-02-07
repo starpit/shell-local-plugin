@@ -56,7 +56,7 @@ const commandOptions = {
 }
 
 /** which commands need no command line arguments? */
-const needsNoArgs = [ 'kill', 'init' ]
+const needsNoArgs = [ 'clean', 'kill', 'init' ]
 
 let _container, _containerType, _containerCode, _imageDir, _image;
 
@@ -101,6 +101,7 @@ const local = wsk => (_a, _b, fullArgv, modules, rawCommandString, _2, argvWitho
             // missing will be -1, 'overall' will be 0. so none of that
             resolve(printDocs());
         } else if (argvWithoutOptions.length === 2 && !needsNoArgs.find(_ => _ === argvWithoutOptions[1])) {
+            debug('insufficient args')
             resolve(printDocs(argvWithoutOptions[1]));
         }       
         else{
@@ -180,10 +181,15 @@ const local = wsk => (_a, _b, fullArgv, modules, rawCommandString, _2, argvWitho
                     removeSpinner(returnDiv);
                 })
                 .catch(e => appendIncreContent(e, spinnerDiv, 'error'))
-            }
-            else if(argvWithoutOptions[1] === 'kill'){
-                appendIncreContent('Stopping and removing the container', spinnerDiv);
+
+            } else if(argvWithoutOptions[1] === 'kill'){
                 kill(spinnerDiv)
+                    .then(() => resolve(true))
+                    .catch(e => appendIncreContent(e, spinnerDiv, 'error'))
+                return // we will resolve the promise
+
+            } else if(argvWithoutOptions[1] === 'clean'){
+                clean(spinnerDiv)
                     .then(() => resolve(true))
                     .catch(e => appendIncreContent(e, spinnerDiv, 'error'))
                 return // we will resolve the promise
@@ -204,7 +210,7 @@ const local = wsk => (_a, _b, fullArgv, modules, rawCommandString, _2, argvWitho
  * images. The result will be cached in the _imageDir variable.
  *
  */
-const getImageDir = spinnerDiv => {
+const getImageDir = () => {
     if(_imageDir !== undefined) {
         // we have cached it
         return Promise.resolve(_imageDir)
@@ -230,35 +236,59 @@ const getImageDir = spinnerDiv => {
     }
 }
 
+/** kill and clean can tolerate non-existance of containers or images */
+const squash = err => {
+    console.error(err)
+}
+
 /**
  * Kill the current local docker container
  *
  */
 const kill = spinnerDiv => {
-    return new Promise((resolve, reject) => {
-        debug('stopping the container');        
-        if(_container){
-            // if in this session there's a container started, remove it. 
-            _container.stop()
+    if (_container) {
+        // if in this session there's a container started, remove it. 
+        debug('kill from variable')
+        return _container.stop()
             .then(() => _container.delete({ force: true }))
-            .then(() => resolve(true))
-            .catch((e => reject(e)));
-        }
-        else{
-            // if no docker container currently recorded, we still try
-            // to kill and remove the container, in case shell crashed
-            // and left a container open
-            const squash = err => {
-                console.error(err)
-                return true
-            }
-            docker.image.get('shell-local').status().catch(resolve)
-                .then(image => image.kill().catch(squash)
-                      .then(() => image.remove().catch(squash)))
-                .then(() => resolve(true))
-                .catch(reject)
-        }                
-    });
+            .then(() => { _container = _containerType = _containerCode = undefined })
+
+    } else {
+        // if no docker container currently recorded, we still try
+        // to kill and remove the container, in case shell crashed
+        // and left a container open
+        debug('kill from api')
+        return docker.container.get('shell-local').status().catch(squash)
+            .then(container => !container ? Promise.resolve() : container.stop().catch(squash)
+                  .then(() => container.delete({ force: true })))
+            .then(() => { _container = _containerType = _containerCode = undefined })
+    }
+}
+
+/** flatten array of arrays */
+const flatten = arrays => [].concat.apply([], arrays)
+
+/**
+ * Remove the locally pulled copy of the image
+ *
+ */
+const clean = spinnerDiv => {
+    debug('clean')
+    return kill(spinnerDiv)
+        .then(() => debug('kill done'))
+        .then(getImageDir)
+        .then(imageDir => Object.keys(imageDir).map(_ => imageDir[_]))
+        .then(flatten)
+        .then(x => { console.error(x); return x })
+        .then(images => Promise.all(images.map(({image}) => {
+            debug(`cleaning ${image}`)
+            return docker.image.get(image).status().catch(squash) // catch here in case the container doesn't exist
+              .then(image => {
+                  if (image) {
+                      return image.remove({ force: true }).catch(squash)
+                  }
+              })
+        })))
 }
 
 /**
@@ -281,14 +311,12 @@ const init = (kind, spinnerDiv) => {
             }
             else{
                 // for all other cases, stop and delete the container, reopen a new one
-                kill(spinnerDiv)
-                .then(d => resolve(d))
-                .catch(e => resolve(e));                
+                kill(spinnerDiv).then(resolve, resolve)
 
                 // continue to the next phase no matter what: 
-                // if there's any error, it will be catched when starting a container
+                // if there's any error, it will be caught when starting a container
                 // delay here is small enough that it can be ignored 
-            }            
+            }
         })
         .then(d => {
             if(d === dontCreateContainer){
@@ -332,7 +360,7 @@ const init = (kind, spinnerDiv) => {
                 }
                 debug('using image', image)
 
-                debug('checking to see if the image already exists locally', imageList)
+                debug('checking to see if the image already exists locally')
                 if (imageList.find(({data}) => data.RepoTags && data.RepoTags.find(_ => _ === image))) {
                     debug('skipping docker pull, as it is already local')
                     return Promise.all([image]);
@@ -529,12 +557,14 @@ const runActionInDocker = (functionCode, functionKind, functionInput, isBinary, 
     let start, init, run, end;
     return new Promise((resolve, reject) => {
         let p;
-        if(_container && _containerCode === functionCode &&  _containerType === functionKind){
+        if(_container && _containerCode === functionCode && _containerType === functionKind){
+            debug('skipping init action')
             p = Promise.resolve(skipInit);
         } 
         else{
             //console.log(_container);
-            appendIncreContent('Initializing the action', spinnerDiv);
+            debug('init action')
+            appendIncreContent('Initializing action', spinnerDiv);
             start = Date.now();
             p = rt({
                 method: 'post',
