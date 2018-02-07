@@ -1,6 +1,6 @@
 {
-  "name": "shell-local-plugin",
-  "version": "0.0.8",
+  "name": "@ibm-functions/shell-local-plugin",
+  "version": "0.0.11",
   "description": "An IBM Cloud Functions Shell plugin that lets users run and debug actions locally in a docker container",
   "main": "plugin.js",
   "directories": {
@@ -11,7 +11,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/kerryspchang/shell-local-plugin.git"
+    "url": "git+https://github.com/ibm-functions/shell-local-plugin.git"
   },
   "author": "Kerry Chang",
   "license": "Apache-2.0",
