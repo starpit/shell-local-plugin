@@ -41,7 +41,7 @@ const dontCreateContainer = "don't create container",
     skipInit = "skip initialization",
     dontShutDownContainer = "don't shut down container",
     htmlIncre = '<div style="-webkit-app-region: no-drag; flex: 1; display: flex"></div>',
-    spinnerContent ='<div style="display: flex; flex: 1; justify-content: center; align-items: center; font-size: 1.5em"><div class="replay_output" style="min-width:50%;order:2;margin-left: 1.5rem;"></div><div class="replay_spinner" style="animation: spin 2s linear infinite; font-size: 5em; color: var(--color-support-02);"><i class="fas fa-cog"></i></div></div></div>',
+    spinnerContent ='<div style="display: flex; flex: 1; justify-content: center; align-items: center; font-size: 1.5em; margin: 1em"><div class="replay_output" style="min-width:50%;order:2;margin-left: 1.5rem;"></div><div class="replay_spinner" style="animation: spin 2s linear infinite; font-size: 5em; color: var(--color-support-02);"><i class="fas fa-cog"></i></div></div></div>',
     debuggerURL = 'chrome-devtools://devtools/bundled/inspector.html?experiments=true&v8only=true&ws=0.0.0.0:5858';
 
 const uuidPattern = /^[0-9a-f]{32}$/;
@@ -170,7 +170,7 @@ const local = wsk => (_a, _b, fullArgv, modules, rawCommandString, _2, argvWitho
             }
             else if(argvWithoutOptions[1] === 'init'){                
                 getImageDir(spinnerDiv)
-                .then(() => init(spinnerDiv))
+                .then(() => init(spinnerDiv)) // this is broken, missing kind
                 .then(() => {
                     appendIncreContent('Done', spinnerDiv)
                     removeSpinner(returnDiv);
@@ -243,8 +243,9 @@ const kill = spinnerDiv => {
             .catch((e => reject(e)));
         }
         else{
-            // if no docker container currently recorded, we still try to kill and remove the container, in case shell crashed and left a container opened            
-
+            // if no docker container currently recorded, we still try
+            // to kill and remove the container, in case shell crashed
+            // and left a container open
             let rm = false;
             repl.qexec('! docker kill shell-local')
             .then(() => {
@@ -287,7 +288,6 @@ const init = (kind, spinnerDiv) => {
                 resolve(dontCreateContainer);
             }
             else{
-                debug('stopping the container');
                 // for all other cases, stop and delete the container, reopen a new one
                 kill(spinnerDiv)
                 .then(d => resolve(d))
@@ -300,60 +300,75 @@ const init = (kind, spinnerDiv) => {
         })
         .then(d => {
             if(d === dontCreateContainer){
-                return Promise.resolve(d);
+                debug('skipping docker image ls')
+                return d
             }
             else{                 
-                return repl.qexec('! docker image ls');
-               
-
-                //let Image = 'openwhisk/action-nodejs-v8';   // need to use kind here to get the right image
-                //appendIncreContent('Starting container', spinnerDiv);
-                //return docker.container.create(Object.assign({Image: image}, dockerConfig))
+                return docker.image.list()
             }            
         }) 
-        .then(d => {
-            if(d === dontCreateContainer){
-                return Promise.resolve(d);
+        .then(imageList => {
+            if(imageList === dontCreateContainer){
+                debug('skipping docker create')
+                return imageList
             }
             else{
+                // determine which dockerhub image corresponds to the
+                // kind we're trying to invoke; this will be stored in
+                // the image variable:
                 let image = 'openwhisk/action-nodejs-v8';
                 if(_imageDir){
-                    Object.keys(_imageDir).forEach(key => {
-                        _imageDir[key].forEach(o => {
-                            if(o.kind === kind){
-                                image = o.image;
-                            }
+                    //
+                    // _imageDir is the output of the openwhisk `/`
+                    // api, which gives some schema information,
+                    // including a of this form: { nodejs: [ { kind1,
+                    // image1 }, { kind2, image2 } ] }
+                    //
+                    try {
+                        debug(`scanning imageDir for kind=${kind}`, _imageDir)
+                        Object.keys(_imageDir).forEach(key => {
+                            _imageDir[key].forEach(o => {
+                                if(o.kind === kind){
+                                    image = o.image;
+                                }
+                            });
                         });
-                    });
+                    } catch (err) {
+                        console.error(err)
+                        // let's hope for the best
+                    }
                 }
-
                 debug('using image', image)
 
-                const imageLabel = image.indexOf(':latest') != -1 ? image.substring(0, image.indexOf(':latest')) : image;
-                
-                if($(d).html().indexOf(imageLabel) != -1){
-                    debug('Image already exist. No need to pull');
-                    return Promise.all([Promise.resolve(image)]);
+                debug('checking to see if the image already exists locally')
+                if (imageList.find(({data}) => data.RepoTags.find(_ => _ === image))) {
+                    debug('skipping docker pull, as it is already local')
+                    return Promise.all([image]);
                 }
                 else{
-                    appendIncreContent(`Pulling ${kind} runtime docker image (one-time init)`, spinnerDiv);
-                    return Promise.all([Promise.resolve(image), repl.qexec(`! docker pull ${image}`)]);
+                    debug('docker pull', image)
+                    appendIncreContent(`Pulling image (one-time init)`, spinnerDiv);
+                    return Promise.all([image, repl.qexec(`! docker pull ${image}`)]);
                 }
             }
         })   
         .then(d => {
             if(!Array.isArray(d)){
+                debug('skipping docker create')
                 return Promise.resolve(d);
             }
-            else{                
+            else{
+                debug('docker create')
                 return docker.container.create(Object.assign({Image: d[0]}, dockerConfig))
             }
         })             
         .then(d => {
             if(d === dontCreateContainer){
+                debug('skipping container start')
                 return Promise.resolve(_container);
             }
             else{
+                debug('container start')
                 _container = d; 
                 _containerType = kind;            
                 return _container.start(); 
@@ -361,7 +376,7 @@ const init = (kind, spinnerDiv) => {
         })
         .then(setupLogs)
         .then(() => resolve(true))
-        .catch((e => reject(e)));
+        .catch(reject)
     });
 }
 
