@@ -55,6 +55,9 @@ const commandOptions = {
     //placeholder: 'Loading visualization ...'
 }
 
+/** which commands need no command line arguments? */
+const needsNoArgs = [ 'kill', 'init' ]
+
 let _container, _containerType, _containerCode, _imageDir, _image;
 
 
@@ -86,17 +89,18 @@ const local = wsk => (_a, _b, fullArgv, modules, rawCommandString, _2, argvWitho
     const { ui } = modules
 
     return new Promise((resolve, reject) => {  
-        if(argvWithoutOptions[0] && argvWithoutOptions[0] != 'local'){
+        if (argvWithoutOptions[0] && argvWithoutOptions[0] !== 'local') {
+            // e.g. invoke => local invoke
             argvWithoutOptions.unshift('local');
         }
-        if(argvWithoutOptions.length === 1){            
+        debug('args', argvWithoutOptions)
+
+        if (argvWithoutOptions.length === 1) {
             resolve(printDocs());
-        }
-        else if(Object.keys(docs).indexOf(argvWithoutOptions[1]) < 1){
-            // missing wil be -1, 'overall' will be 0. so none of that
+        } else if (Object.keys(docs).indexOf(argvWithoutOptions[1]) < 1) {
+            // missing will be -1, 'overall' will be 0. so none of that
             resolve(printDocs());
-        }
-        else if(argvWithoutOptions.length === 2){
+        } else if (argvWithoutOptions.length === 2 && !needsNoArgs.find(_ => _ === argvWithoutOptions[1])) {
             resolve(printDocs(argvWithoutOptions[1]));
         }       
         else{
@@ -179,12 +183,10 @@ const local = wsk => (_a, _b, fullArgv, modules, rawCommandString, _2, argvWitho
             }
             else if(argvWithoutOptions[1] === 'kill'){
                 appendIncreContent('Stopping and removing the container', spinnerDiv);
-                kill(returnDiv)
-                .then(() => {
-                    appendIncreContent('Done', spinnerDiv)
-                    removeSpinner(returnDiv);
-                })
-                .catch(e => appendIncreContent(e, spinnerDiv, 'error'))
+                kill(spinnerDiv)
+                    .then(() => resolve(true))
+                    .catch(e => appendIncreContent(e, spinnerDiv, 'error'))
+                return // we will resolve the promise
             }
 
             resolve({
@@ -246,25 +248,15 @@ const kill = spinnerDiv => {
             // if no docker container currently recorded, we still try
             // to kill and remove the container, in case shell crashed
             // and left a container open
-            let rm = false;
-            repl.qexec('! docker kill shell-local')
-            .then(() => {
-                rm = true;  // remove is what matters. cannot open two containers with the same name
-                return repl.qexec('! docker rm shell-local');
-            })
-            .then(() => {
-                resolve(true);
-            })
-            .catch((e) => {
-                if(!rm){
-                    // if kill failed, try removing the container here again. 
-                    repl.qexec('! docker rm shell-local')
-                    .then(() => resolve(true))
-                    .catch((e) => reject(e));
-                }
-                else
-                    reject(e);
-            });
+            const squash = err => {
+                console.error(err)
+                return true
+            }
+            docker.image.get('shell-local').status().catch(resolve)
+                .then(image => image.kill().catch(squash)
+                      .then(() => image.remove().catch(squash)))
+                .then(() => resolve(true))
+                .catch(reject)
         }                
     });
 }
@@ -340,8 +332,8 @@ const init = (kind, spinnerDiv) => {
                 }
                 debug('using image', image)
 
-                debug('checking to see if the image already exists locally')
-                if (imageList.find(({data}) => data.RepoTags.find(_ => _ === image))) {
+                debug('checking to see if the image already exists locally', imageList)
+                if (imageList.find(({data}) => data.RepoTags && data.RepoTags.find(_ => _ === image))) {
                     debug('skipping docker pull, as it is already local')
                     return Promise.all([image]);
                 }
@@ -794,12 +786,17 @@ const appendIncreContent = (content, div, error) => {
         return;
     }
 
-    if(error){
+    if (error) {
+        console.error(content)
+
+        // tell the spinner to change to an error icon
         errorSpinner(div)
 
+        // format the error message
         const err = content,
               message = isUserError(err) ? ui.oopsMessage(err) : 'Internal Error'
 
+        // and then display it
         $(div).find('.replay_output').append(`<div style='padding-top:0.25ex' class='red-text fake-in'>${message}</div>`);
     }
     else if(typeof content === 'string') {
@@ -822,17 +819,19 @@ const removeSpinner = div => {
 }
 
 /**
- * Display an error icon in place of the spinner icon
+ * Display a given icon in place of the spinner icon
  *
  */
-const errorSpinner = spinnerDiv => {
+const iconForSpinner = (spinnerDiv, icon, extraCSS) => {
     const iconContainer = $(spinnerDiv).find('.replay_spinner')
     $(iconContainer).css('animation', '')
     $(iconContainer).css('color', '')
-    $(iconContainer).addClass('red-text')
+    if (extraCSS) $(iconContainer).addClass(extraCSS)
     $(iconContainer).empty()
-    $(iconContainer).append('<i class="fas fa-exclamation-triangle"></i>')
+    $(iconContainer).append(`<i class="${icon}"></i>`)
 }
+const errorSpinner = spinnerDiv => iconForSpinner(spinnerDiv, 'fas fa-exclamation-triangle', 'red-text')
+const okSpinner = spinnerDiv => iconForSpinner(spinnerDiv, 'fas fa-thumbs-up', 'green-text')
 
 /**
  * Update the sidecar header to reflect the given viewName and entity
