@@ -591,9 +591,28 @@ const runActionInDocker = (functionCode, functionKind, functionInput, isBinary, 
     });
 }
 
+/**
+ * Wrap the given code with the debug harness
+ *
+ * @param code the text of the main code
+ * @param input the JSON structure which is the input parameter
+ * @param path the (container-local) output path to which we should write the result
+ *
+ * @return the text of the harnessed code
+ */
 const debugCodeWrapper = (code, input, path) => {
-    return `\n\n${code}\n\n//below is the debuger code added by Shell \n\nlet debugMainFunc = exports.main ? exports.main : main; \nlet s = debugMainFunc(${JSON.stringify(input)});\nrequire('fs').writeFileSync('${path}', JSON.stringify(s))\n`;
+    return `
 
+${code}
+
+
+
+
+
+// below is the debugger harness
+const debugMainFunc = exports.main || main
+Promise.resolve(debugMainFunc(${JSON.stringify(input)}))
+  .then(result => require('fs').writeFileSync('${path}', JSON.stringify(result)))`
 }
 
 /**
@@ -601,7 +620,7 @@ const debugCodeWrapper = (code, input, path) => {
  *
  */
 const runActionDebugger = (actionName, functionCode, functionKind, functionInput, isBinary, { ui }, spinnerDiv, returnDiv, dashOptions) => new Promise((resolve, reject) => {
-    appendIncreContent('Preparing debugger', spinnerDiv)
+    appendIncreContent('Preparing container', spinnerDiv)
 
     // this specifies a path inside docker container, so we should not
     // need to worry about hard-coding something here
@@ -611,9 +630,11 @@ const runActionDebugger = (actionName, functionCode, functionKind, functionInput
     // result somewhere we can find
     let fileCode, entry;
     if(isBinary){
+        // then "fileCode" is really the zip contents; we'll extract this below
         fileCode = functionCode;
     }
     else{
+        // otherwise, this is a plain action
         fileCode = debugCodeWrapper(functionCode, functionInput, resultFilePath);
     }
 
@@ -635,41 +656,51 @@ const runActionDebugger = (actionName, functionCode, functionKind, functionInput
     // to complete; at that point, we resolve with { result, logs }
     //
 
-    createTempFolder()
-    .then(d => {  // create a local temp folder
-        let dirPath = d.path, cleanupCallback = d.cleanupCallback, containerFolderPath = dirPath.substring(dirPath.lastIndexOf('/')+1), entry;        
+    // first, create a local temp folder
+    createTempFolder().then(({path:dirPath, cleanupCallback}) => {  
+        const containerFolderPath = dirPath.substring(dirPath.lastIndexOf('/') + 1)
+
         fs.outputFile(`${dirPath}/${debugFileName}`, fileCode, isBinary?'base64':undefined) // write file to that local temp folder
-        .then(() => {     
-            return new Promise((resolve, reject) => {                
-                if(isBinary){   // if it is a zip action, unzip first
-                    extract(`${dirPath}/${debugFileName}`, {dir: `${dirPath}`}, function (err) {
-                        if(err){
-                            reject(err);
-                        }
-                        else{                            
-                            fs.readFile(`${dirPath}/package.json`)  // read package.json
-                            .then(data => {                            
-                                entry = JSON.parse(data).main;
-                                return fs.readFile(`${dirPath}/${entry}`);  // get the entry js file
+        .then(() => new Promise((resolve, reject) => {                
+            if(isBinary){   // if it is a zip action, unzip first
+                extract(`${dirPath}/${debugFileName}`, { dir: `${dirPath}` }, function (err) {
+                    if(err){
+                        reject(err);
+                    }
+                    else{
+                        // see if a package.json exists; if so read it
+                        // in, because there may be a "main" field
+                        // that indicates the name of the file which
+                        // includes the main routine
+                        const packageJsonPath = `${dirPath}/package.json`
+                        fs.pathExists(packageJsonPath)
+                            .then(exists => {
+                                if (exists) {
+                                    // yup, we found a package.json, now see if it has a main field
+                                    return fs.readFile(packageJsonPath)
+                                        .then(data => JSON.parse(data).main || 'index.js') // backup plan: index.js
+                                } else {
+                                    // nope, no package.json, so use the default main file
+                                    return 'index.js'
+                                }
                             })
-                            .then(data => {
-                                let newCode = debugCodeWrapper(data.toString(), functionInput, resultFilePath); // wrap that js file with our runnner code
-                                return fs.outputFile(`${dirPath}/${entry}`, newCode);   // write the new file to temp directory
-                            })
-                            .then(() => {resolve(entry)})
+                            .then(entry => fs.readFile(`${dirPath}/${entry}`)  // read in the entry code, so we can wrap it with debug
+                                  .then(data => debugCodeWrapper(data.toString(), functionInput, resultFilePath)) // wrap it!
+                                  .then(newCode => fs.outputFile(`${dirPath}/${entry}`, newCode)) // write the new file to temp directory
+                                  .then(() => resolve(entry))) // return value: the location of the entry
                             .catch(reject)
-                        }                   
-                    });
-                }
-                else {
-                    entry = debugFileName;
-                    resolve(true);
-                }
-            });  
-        })
-        .then(() => repl.qexec(`! docker cp ${dirPath} shell-local:/nodejsAction`)) // copy temp dir into container
-        .then(() => appendIncreContent('Starting the debugger', spinnerDiv))         // status update
-        .then(() => {
+                    }
+                })
+            } else {
+                // otherwise, this is a plain (not zip) action
+                entry = debugFileName;
+                resolve(entry) // return value: the location of the entry
+            }
+        }))  
+        .then(entry => repl.qexec(`! docker cp ${dirPath} shell-local:/nodejsAction`) // copy temp dir into container
+              .then(() => appendIncreContent('Launching debugger', spinnerDiv))    // status update
+              .then(() => entry))
+        .then(entry => {
             // this is where we launch the local debugger, and wait for it to terminate
             // as to why we need to hack for the Waiting for debugger on stderr:
             // https://bugs.chromium.org/p/chromium/issues/detail?id=706916
