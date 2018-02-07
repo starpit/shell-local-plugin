@@ -14,11 +14,11 @@
     "url": "git+https://github.com/kerryspchang/shell-local-plugin.git"
   },
   "author": "Kerry Chang",
-  "license": "ISC",
+  "license": "Apache-2.0",
   "bugs": {
-    "url": "https://github.com/kerryspchang/shell-local-plugin/issues"
+    "url": "https://github.com/ibm-functions/shell-local-plugin/issues"
   },
-  "homepage": "https://github.com/kerryspchang/shell-local-plugin#readme",
+  "homepage": "https://github.com/ibm-functions/shell-local-plugin#readme",
   "dependencies": {
     "extract-zip": "^1.6.6",
     "fs-extra": "^5.0.0",
