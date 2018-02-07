@@ -41,7 +41,7 @@ const dontCreateContainer = "don't create container",
     skipInit = "skip initialization",
     dontShutDownContainer = "don't shut down container",
     htmlIncre = '<div style="-webkit-app-region: no-drag; flex: 1; display: flex"></div>',
-    spinnerContent ='<div style="display: flex; flex: 1; justify-content: center; align-items: center; font-size: 1.5em"><div class="replay_output" style="order:2;margin-left: 1rem;"></div><div class="replay_spinner" style="animation: spin 2s linear infinite; font-size: 5em; color: var(--color-support-02);"><i class="fas fa-cog"></i></div></div></div>',
+    spinnerContent ='<div style="display: flex; flex: 1; justify-content: center; align-items: center; font-size: 1.5em"><div class="replay_output" style="min-width:50%;order:2;margin-left: 1.5rem;"></div><div class="replay_spinner" style="animation: spin 2s linear infinite; font-size: 5em; color: var(--color-support-02);"><i class="fas fa-cog"></i></div></div></div>',
     debuggerURL = 'chrome-devtools://devtools/bundled/inspector.html?experiments=true&v8only=true&ws=0.0.0.0:5858';
 
 const uuidPattern = /^[0-9a-f]{32}$/;
@@ -134,7 +134,7 @@ const local = wsk => (_a, _b, fullArgv, modules, rawCommandString, _2, argvWitho
                     .then(() => init(d.kind, spinnerDiv))
                     .then(() => runActionInDocker(d.code, d.kind, Object.assign({}, d.param, d.input, input), d.binary, spinnerDiv))  
                     .then(res => displayAsActivation('local activation', d, start, wsk, res))
-                    .catch(e => appendIncreContent(ui.oopsMessage(e), spinnerDiv, 'error'))
+                    .catch(e => appendIncreContent(e, spinnerDiv, 'error'))
             }
             else if(argvWithoutOptions[1] === 'debug'){
                 let d
@@ -166,7 +166,7 @@ const local = wsk => (_a, _b, fullArgv, modules, rawCommandString, _2, argvWitho
                 .then(res => displayAsActivation('debug session', d, start, wsk, res))
                 .then(closeDebuggerUI)
                 .then(() => debug('debug session done', result))
-                .catch(e => appendIncreContent(ui.oopsMessage(e), spinnerDiv, 'error'))
+                .catch(e => appendIncreContent(e, spinnerDiv, 'error'))
             }
             else if(argvWithoutOptions[1] === 'init'){                
                 getImageDir(spinnerDiv)
@@ -175,10 +175,7 @@ const local = wsk => (_a, _b, fullArgv, modules, rawCommandString, _2, argvWitho
                     appendIncreContent('Done', spinnerDiv)
                     removeSpinner(returnDiv);
                 })
-                .catch(e => {
-                    appendIncreContent(e, spinnerDiv, 'error')
-                    removeSpinner(returnDiv)
-                });
+                .catch(e => appendIncreContent(e, spinnerDiv, 'error'))
             }
             else if(argvWithoutOptions[1] === 'kill'){
                 appendIncreContent('Stopping and removing the container', spinnerDiv);
@@ -187,10 +184,7 @@ const local = wsk => (_a, _b, fullArgv, modules, rawCommandString, _2, argvWitho
                     appendIncreContent('Done', spinnerDiv)
                     removeSpinner(returnDiv);
                 })
-                .catch(e => {
-                    appendIncreContent(e, spinnerDiv, 'error')
-                    removeSpinner(returnDiv)
-                });
+                .catch(e => appendIncreContent(e, spinnerDiv, 'error'))
             }
 
             resolve({
@@ -662,7 +656,8 @@ const runActionDebugger = (actionName, functionCode, functionKind, functionInput
                                 let newCode = debugCodeWrapper(data.toString(), functionInput, resultFilePath); // wrap that js file with our runnner code
                                 return fs.outputFile(`${dirPath}/${entry}`, newCode);   // write the new file to temp directory
                             })
-                            .then(() => {resolve(entry)})  
+                            .then(() => {resolve(entry)})
+                            .catch(reject)
                         }                   
                     });
                 }
@@ -724,8 +719,24 @@ const runActionDebugger = (actionName, functionCode, functionKind, functionInput
                 $(webview).mouseup(e => {e.stopPropagation();})
             }
         })
+       .catch(reject)
     })
 })
+
+/**
+  * Determine whether this is user error or internal (our) error
+  *
+  */
+const isUserError = error => {
+    if (error.statusCode === 404) {
+        // then this is probably a normal "action not found" error
+        // from the backend; display the backend's message,to be
+        // compatible with the REPL's experience
+        return true
+    } else {
+        return false
+    }
+}
 
 /**
  * Add a status message
@@ -740,15 +751,10 @@ const appendIncreContent = (content, div, error) => {
     if(error){
         errorSpinner(div)
 
-        let message = content;
-        if(content.error){
-            if(content.message)
-                message = content.message;
-            else
-                message = JSON.stringify(content, null, 4);
-        }        
+        const err = content,
+              message = isUserError(err) ? ui.oopsMessage(err) : 'Internal Error'
 
-        $(div).find('.replay_output').append(`<div class='red-text fake-in'>${message}</div>`);
+        $(div).find('.replay_output').append(`<div style='padding-top:0.25ex' class='red-text fake-in'>${message}</div>`);
     }
     else if(typeof content === 'string') {
         $(div).find('.replay_output').append(`<div style='padding-top:0.25ex' class='fade-in'>${content}</div>`);
