@@ -85,73 +85,82 @@ module.exports = (commandTree, prequire) => {
  * Main command handler routine
  *
  */
-const local = wsk => (_a, _b, fullArgv, modules, rawCommandString, _2, argvWithoutOptions, dashOptions) => {    
-    const { ui } = modules
+const local = wsk => (_a, _b, fullArgv, modules, rawCommandString, _2, argvWithoutOptions, dashOptions) => new Promise((resolve, reject) => {
+    const { ui, errors } = modules
 
-    return new Promise((resolve, reject) => {  
-        if (argvWithoutOptions[0] && argvWithoutOptions[0] !== 'local') {
-            // e.g. invoke => local invoke
-            argvWithoutOptions.unshift('local');
-        }
-        debug('args', argvWithoutOptions)
+    // we always want to have "local" at the front, so e.g. invoke => local invoke
+    if (argvWithoutOptions[0] && argvWithoutOptions[0] !== 'local') {
+        argvWithoutOptions.unshift('local');
+    }
+    debug('args', argvWithoutOptions)
 
-        if (argvWithoutOptions.length === 1) {
-            resolve(printDocs());
-        } else if (Object.keys(docs).indexOf(argvWithoutOptions[1]) < 1) {
-            // missing will be -1, 'overall' will be 0. so none of that
-            resolve(printDocs());
-        } else if (argvWithoutOptions.length === 2 && !needsNoArgs.find(_ => _ === argvWithoutOptions[1])) {
-            debug('insufficient args')
-            resolve(printDocs(argvWithoutOptions[1]));
-        }       
-        else{
-            let input = {};
-            for(var i=2; i<fullArgv.length; i++){
-                let addIndex = 0;
-                if(fullArgv[i] === '-p' && fullArgv[i+1] && fullArgv[i+1] != '-p'){
-                    addIndex++;
-                    if(fullArgv[i+2] && fullArgv[i+2] != '-p'){
-                        input[fullArgv[i+1]] = fullArgv[i+2];
-                        addIndex++;
-                    }
+    if (argvWithoutOptions.length === 1) {
+        debug('overall usage requested')
+        reject(new errors.usage(printDocs()))
+
+    } else if (Object.keys(docs).indexOf(argvWithoutOptions[1]) < 1) {
+        // missing will be -1, 'overall' will be 0. so none of that
+        debug('unknown command')
+        reject(new errors.usage(printDocs()))
+
+    } else if (argvWithoutOptions.length === 2
+               && !needsNoArgs.find(_ => _ === argvWithoutOptions[1])
+               && !fillInWithImplicitEntity(ui, argvWithoutOptions, 2)) { // has the user has already selected an entity in the sidecar?
+        debug('insufficient args')
+        reject(new errors.usage(printDocs(argvWithoutOptions[1])))
+
+    } else {
+        //
+        // otherwise, we are good to go with executing the command
+        //
+
+        // parse the "-p key value" inputs
+        const input = {}
+        for (let i = 2; i < fullArgv.length; i++) {
+            let addIndex = 0
+            if (fullArgv[i] === '-p' && fullArgv[i + 1] && fullArgv[i + 1] !== '-p') {
+                addIndex++
+                if (fullArgv[i + 2] && fullArgv[i + 2] !== '-p') {
+                    input[fullArgv[i + 1]] = fullArgv[i + 2]
+                    addIndex++
                 }
-                i += addIndex;
             }
+            i += addIndex
+        }
 
-            const returnDiv = $(htmlIncre),
-                  spinnerDiv = $(returnDiv).append(spinnerContent)
+        // we use these to display incremental output in the sidecar
+        const returnDiv = $(htmlIncre),
+              spinnerDiv = $(returnDiv).append(spinnerContent)
 
-            // determine bottom bar modes based on the command
-            let modes = []
+        // determine bottom bar modes based on the command
+        const modes = []
 
-            if(argvWithoutOptions[1] === 'invoke'){ 
-                let d
+        if (argvWithoutOptions[1] === 'invoke') {
+            debug('executing invoke command')
+            let d
 
-                // when the local activation started
-                const start = Date.now()
+            Promise.all([getActionNameAndInputFromActivations(argvWithoutOptions[2], spinnerDiv),
+                                getImageDir(spinnerDiv)])
+                .then(([data]) => data)
+                .then(updateSidecarHeader('local invoke'))
+                .then(data => {d = data; return getActionCode(data.name, spinnerDiv)})   // data: code, kind, binary
+                .then(data => {d = Object.assign({}, d, data)})
+                .then(() => init(d.kind, spinnerDiv))
+                .then(() => Date.now()) // remember the activation start time; note that this is AFTER dockerization
+                .then(start => runActionInDocker(d.code, d.kind, Object.assign({}, d.param, d.input, input), d.binary, spinnerDiv)
+                      .then(res => displayAsActivation('local activation', d, start, wsk, res)))
+                .catch(e => appendIncreContent(e, spinnerDiv, 'error'))
+        }
 
-                Promise.all([getActionNameAndInputFromActivations(argvWithoutOptions[2], spinnerDiv),
-                             getImageDir(spinnerDiv)])
-                    .then(([data]) => data)
-                    .then(updateSidecarHeader('local invoke'))
-                    .then(data => {d = data; return getActionCode(data.name, spinnerDiv)})   // data: code, kind, binary
-                    .then(data => {d = Object.assign({}, d, data)})
-                    .then(() => init(d.kind, spinnerDiv))
-                    .then(() => runActionInDocker(d.code, d.kind, Object.assign({}, d.param, d.input, input), d.binary, spinnerDiv))  
-                    .then(res => displayAsActivation('local activation', d, start, wsk, res))
-                    .catch(e => appendIncreContent(e, spinnerDiv, 'error'))
-            }
-            else if(argvWithoutOptions[1] === 'debug'){
-                let d
+        else if (argvWithoutOptions[1] === 'debug') {
+            debug('executing debug command')
+            let d
 
-                // when the debug session started
-                const start = Date.now()
+            modes.push({ mode: 'stop-debugger', label: strings.stopDebugger, actAsButton: true,
+                         direct: stopDebugger })
 
-                modes.push({ mode: 'stop-debugger', label: strings.stopDebugger, actAsButton: true,
-                             direct: stopDebugger })
-
-                Promise.all([getActionNameAndInputFromActivations(argvWithoutOptions[2], spinnerDiv),
-                             getImageDir(spinnerDiv)])
+            Promise.all([getActionNameAndInputFromActivations(argvWithoutOptions[2], spinnerDiv),
+                                getImageDir(spinnerDiv)])
                 .then(([data]) => data)
                 .then(updateSidecarHeader('debugger'))
                 .then(data => {d = data; return getActionCode(data.name, spinnerDiv)})  // data: {code, kind}
@@ -167,14 +176,17 @@ const local = wsk => (_a, _b, fullArgv, modules, rawCommandString, _2, argvWitho
                     }
                     
                 })
-                .then(() => runActionDebugger(d.name, d.code, d.kind, Object.assign({}, d.param, d.input, input), d.binary, modules, spinnerDiv, returnDiv, dashOptions))
-                .then(res => displayAsActivation('debug session', d, start, wsk, res))
+                .then(() => Date.now()) // remember the activation start time; note that this is AFTER dockerization
+                .then(start => runActionDebugger(d.name, d.code, d.kind, Object.assign({}, d.param, d.input, input), d.binary, modules, spinnerDiv, returnDiv, dashOptions)
+                      .then(res => displayAsActivation('debug session', d, start, wsk, res)))
                 .then(closeDebuggerUI)
                 .then(() => debug('debug session done', result))
                 .catch(e => appendIncreContent(e, spinnerDiv, 'error'))
-            }
-            else if(argvWithoutOptions[1] === 'init'){                
-                getImageDir(spinnerDiv)
+        }
+
+        else if (argvWithoutOptions[1] === 'init') {
+            debug('executing init command')
+            getImageDir(spinnerDiv)
                 .then(() => init(spinnerDiv)) // this is broken, missing kind
                 .then(() => {
                     appendIncreContent('Done', spinnerDiv)
@@ -182,28 +194,43 @@ const local = wsk => (_a, _b, fullArgv, modules, rawCommandString, _2, argvWitho
                 })
                 .catch(e => appendIncreContent(e, spinnerDiv, 'error'))
 
-            } else if(argvWithoutOptions[1] === 'kill'){
-                kill(spinnerDiv)
-                    .then(() => resolve(true))
-                    .catch(e => appendIncreContent(e, spinnerDiv, 'error'))
-                return // we will resolve the promise
+        } else if (argvWithoutOptions[1] === 'kill') {
+            debug('executing kill command')
+            return kill(spinnerDiv)
+                .then(() => resolve(true))
+                .catch(e => appendIncreContent(e, spinnerDiv, 'error'))
+            return // we will resolve the promise
 
-            } else if(argvWithoutOptions[1] === 'clean'){
-                clean(spinnerDiv)
-                    .then(() => resolve(true))
-                    .catch(e => appendIncreContent(e, spinnerDiv, 'error'))
-                return // we will resolve the promise
-            }
-
-            resolve({
-                type: 'custom',
-                content: returnDiv[0],
-                modes
-            })
+        } else if (argvWithoutOptions[1] === 'clean') {
+            debug('executing clean command')
+            clean(spinnerDiv)
+                .then(() => resolve(true))
+                .catch(e => appendIncreContent(e, spinnerDiv, 'error'))
+            return // we will resolve the promise
         }
 
-    });
-} /* end of local */
+        // this resolves the top-level promise, telling the repl to open the sidecar
+        resolve({
+            type: 'custom',
+            content: returnDiv[0],
+            modes
+        })
+    }
+}) /* end of local */
+
+/**
+  * If the user has selected an entity, e.g. via a previous "action get", then fill it in
+  *
+  */
+const fillInWithImplicitEntity = (ui, args, idx) => {
+    const entity = ui.currentSelection()
+    if (entity) {
+        const pathAnno = entity.annotations.find(({key}) => key = 'path'),
+              path = pathAnno ? `/${pathAnno.value}` : `/${entity.namespace}/${entity.name}`
+        debug('implicit entity', path)
+        return args[idx] = path
+    }
+}
 
 /**
  * Call the OpenWhisk API to retrieve the list of docker base
