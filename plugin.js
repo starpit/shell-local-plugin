@@ -19,6 +19,7 @@ debug('loading')
 
 const { Docker } = require('node-docker-api'),
       dockerConfig = require('./config'),
+      strings = require('./strings'),
       docs = require('./docs'),
       { kindToExtension } = require('./kinds'),
       docker = new Docker(),
@@ -32,10 +33,6 @@ debug('modules loaded')
 
 /** log terminal marker in openwhisk */
 const MARKER = '&XXX_THE_END_OF_A_WHISK_ACTIVATION_XXX'
-
-const strings = {
-    stopDebugger: 'Done Debugging'
-}
 
 const dontCreateContainer = "don't create container",
     skipInit = "skip initialization",
@@ -65,11 +62,11 @@ let _container, _containerType, _containerCode, _imageDir, _image;
 module.exports = (commandTree, prequire) => {
     const wsk = prequire('/ui/commands/openwhisk-core')
     const handler = local(wsk)
-    commandTree.listen('/local', handler, Object.assign({docs: docs.overall}, commandOptions));
-    commandTree.listen('/local/invoke', handler, Object.assign({docs: docs.invoke}, commandOptions));
-    commandTree.listen('/local/debug', handler, Object.assign({docs: docs.debug}, commandOptions));
-    commandTree.listen('/local/init', handler, Object.assign({docs: docs.init}, commandOptions));
-    commandTree.listen('/local/kill', handler, Object.assign({docs: docs.kill}, commandOptions));
+    commandTree.listen('/local', handler, Object.assign({docs: strings.overall}, commandOptions));
+    commandTree.listen('/local/invoke', handler, Object.assign({docs: strings.invoke}, commandOptions));
+    commandTree.listen('/local/debug', handler, Object.assign({docs: strings.debug}, commandOptions));
+    commandTree.listen('/local/init', handler, Object.assign({docs: strings.init}, commandOptions));
+    commandTree.listen('/local/kill', handler, Object.assign({docs: strings.kill}, commandOptions));
 
     if(typeof document === 'undefined' || typeof window === 'undefined') return; 
     
@@ -98,7 +95,7 @@ const local = wsk => (_a, _b, fullArgv, modules, rawCommandString, _2, argvWitho
         debug('overall usage requested')
         reject(new errors.usage(printDocs()))
 
-    } else if (Object.keys(docs).indexOf(argvWithoutOptions[1]) < 1) {
+    } else if (Object.keys(strings).indexOf(argvWithoutOptions[1]) < 1) {
         // missing will be -1, 'overall' will be 0. so none of that
         debug('unknown command')
         reject(new errors.usage(printDocs()))
@@ -492,16 +489,10 @@ const getActionCode = (actionName, spinnerDiv) => {
  */
 const printDocs = (name) => {
     if(name && docs[name]){
-        return $(docs[name])[0];
+        return docs[name]
     }
     else{
-        let s = $("<div></div>");
-        Object.keys(docs).forEach(name => {
-            //s += (docs[name] + '\n');
-            $(s).append($(docs[name]));
-        })
-        $(s).children().css('white-space', 'pre-wrap').css('margin-bottom', '5px')
-        return $(s)[0];
+        return docs.main
     }
 }
 

@@ -14,15 +14,28 @@
  * limitations under the License.
  */
 
+const { title, overall:header, invoke, debug, kill, init, clean } = require('./strings')
+
 /**
  * Docs for the plugin - total four commands
  *
  */
 module.exports = {
-    overall:  `<div>This plugin lets you run actions in a local Docker container for testing and debugging purposes. <br/>It requires Docker to be pre-installed in your machine.<br/><br/></div>`,
-    invoke: '<div><b>local invoke <i>action_name_or_activation_id</i> [-p name value]</b>: Run an action or activation locally. When replaying an activation, the plugin will fetch its previous activation (if available) to get the input data. You can also provide the input data with -p. Return the output and execution time.</div>',
-    debug: '<div><b>local debug <i>action_name_or_activation_id</i> [-p name value]</b>: **Only for NodeJs** Run an action or activation locally, and open Chrome DevTool in the sidecar for live debugging. Return the output.</div>',
-    init: '<div><b>local init <i>action_name</i></b>: Start a Docker container with the runtime image of an action (but not yet execute the action). This command is mostly used internally by Shell.</div>',
-    kill: `<div><b>local kill</b>: Kill and remove the Docker container this plugin uses. This command is mostly used internally by Shell. The container is removed automatically when you exit Shell.</div>`,
-    clean: `<div><b>local clean</b>: Remove the local copy of the docker images.</div>`
+    main: {
+        title,
+        header,
+        example: 'local <command>',
+        commandPrefix: 'local',
+        available: [{ command: 'invoke', docs: invoke, partial: '<action|activationId>' },
+                    { command: 'debug', docs: debug, partial: '<action|activationId>' },
+                    { command: 'init', docs: init, partial: '<action>' },
+                    { command: 'kill', docs: kill, partial: true },      // this
+                    { command: 'clean', docs: clean, partial: true }     // and this are dangerous, so make them partial
+                   ]
+    },
+    invoke: 'local invoke <action|activationId> [-p param value]',
+    debug: 'local debug <action|activationId> [-p param value]',
+    init: 'local init <action>',
+    kill: 'local kill',
+    clean: 'local clean'
 }
