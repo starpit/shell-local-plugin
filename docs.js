@@ -31,7 +31,8 @@ module.exports = {
                     { command: 'init', docs: init, partial: '<action>' },
                     { command: 'kill', docs: kill, partial: true },      // this
                     { command: 'clean', docs: clean, partial: true }     // and this are dangerous, so make them partial
-                   ]
+                   ],
+        related: ['help']
     },
     invoke: 'local invoke <action|activationId> [-p param value]',
     debug: 'local debug <action|activationId> [-p param value]',

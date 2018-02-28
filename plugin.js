@@ -62,11 +62,12 @@ let _container, _containerType, _containerCode, _imageDir, _image;
 module.exports = (commandTree, prequire) => {
     const wsk = prequire('/ui/commands/openwhisk-core')
     const handler = local(wsk)
-    commandTree.listen('/local', handler, Object.assign({docs: strings.overall}, commandOptions));
+    commandTree.subtree('/local', { usage: docs.main })
     commandTree.listen('/local/invoke', handler, Object.assign({docs: strings.invoke}, commandOptions));
     commandTree.listen('/local/debug', handler, Object.assign({docs: strings.debug}, commandOptions));
     commandTree.listen('/local/init', handler, Object.assign({docs: strings.init}, commandOptions));
     commandTree.listen('/local/kill', handler, Object.assign({docs: strings.kill}, commandOptions));
+    commandTree.listen('/local/clean', handler, Object.assign({docs: strings.clean}, commandOptions));
 
     if(typeof document === 'undefined' || typeof window === 'undefined') return; 
     

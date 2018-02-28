@@ -15,7 +15,7 @@
  */
 
 module.exports = {
-    title: 'Local Activations and Debugging',
+    title: 'Local activations and debugging',
     overall: 'This plugin lets you run actions in a local Docker container for testing and debugging purposes',
     invoke:  'Run an action or activation locally. When replaying an activation, the plugin will fetch its previous activation (if available) to get the input data. You can also provide the input data with -p.',
     debug: 'Run an action or activation locally, and open a debugger in the sidecar (NodeJS only)',
