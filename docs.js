@@ -26,11 +26,11 @@ module.exports = {
         header,
         example: 'local <command>',
         commandPrefix: 'local',
-        available: [{ command: 'invoke', docs: invoke, partial: '<action|activationId>' },
-                    { command: 'debug', docs: debug, partial: '<action|activationId>' },
-                    { command: 'init', docs: init, partial: '<action>' },
-                    { command: 'kill', docs: kill, partial: true },      // this
-                    { command: 'clean', docs: clean, partial: true }     // and this are dangerous, so make them partial
+        available: [{ command: 'invoke', docs: invoke },
+                    { command: 'debug', docs: debug },
+                    { command: 'init', docs: init },
+                    { command: 'kill', docs: kill, partial: true },      // this...
+                    { command: 'clean', docs: clean, partial: true }     // ... and this are dangerous, so make them partial
                    ],
         related: ['help']
     },
