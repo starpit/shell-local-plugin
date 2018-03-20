@@ -22,12 +22,18 @@ const { Docker } = require('node-docker-api'),
       strings = require('./strings'),
       docs = require('./docs'),
       { kindToExtension } = require('./kinds'),
-      docker = new Docker(),
+      docker = new Docker({ socketPath: '/var/run/docker.sock' }),
       $ = require('jquery'),
       rt = require('requestretry'),        
       fs = require('fs-extra'),
       tmp = require('tmp'),
       extract = require('extract-zip');
+
+const promisifyStream = stream => new Promise((resolve, reject) => {
+    stream.on('data', data => console.log(data.toString()))
+    stream.on('end', resolve)
+    stream.on('error', reject)
+})
 
 debug('modules loaded')
 
@@ -384,6 +390,8 @@ const init = (kind, spinnerDiv) => {
                     }
                 }
                 debug('using image', image)
+                // separate image name and tag. tag is always 'latest'. 
+                if(image.indexOf(':') !== -1) image = image.substring(0, image.indexOf(':'));
 
                 debug('checking to see if the image already exists locally')
                 if (imageList.find(({data}) => data.RepoTags && data.RepoTags.find(_ => _ === image))) {
@@ -393,17 +401,21 @@ const init = (kind, spinnerDiv) => {
                 else{
                     debug('docker pull', image)
                     appendIncreContent(`Pulling image (one-time init)`, spinnerDiv);
-                    return Promise.all([image, repl.qexec(`! docker pull ${image}`)]);
+                    return Promise.all([image, 
+                        docker.image.create({}, {fromImage: image, tag:'latest'})
+                        .then(stream => promisifyStream(stream))
+                        .then(() => docker.image.get(image).status())
+                    ]);
                 }
             }
         })   
         .then(d => {
             if(!Array.isArray(d)){
-                debug('skipping docker create')
+                debug('skipping docker container create')
                 return Promise.resolve(d);
             }
             else{
-                debug('docker create')
+                debug('docker container create')
                 return docker.container.create(Object.assign({Image: d[0]}, dockerConfig))
             }
         })             
