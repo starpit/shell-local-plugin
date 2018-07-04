@@ -24,7 +24,8 @@ const { Docker } = require('node-docker-api'),
       { kindToExtension } = require('./kinds'),
       docker = new Docker({ socketPath: '/var/run/docker.sock' }),
       $ = require('jquery'),
-      rt = require('requestretry'),        
+      needle = require('needle'),
+      withRetry = require('promise-retry'),
       fs = require('fs-extra'),
       tmp = require('tmp'),
       extract = require('extract-zip');
@@ -63,7 +64,50 @@ const needsNoArgs = [ 'clean', 'kill', 'init' ]
 
 let _container, _containerType, _containerCode, _imageDir, _image;
 
+/**
+ * Mimic the request-promise functionality, but with retry
+ *
+ */
+const rt = opts => {
+    const { method, url, json, body, headers } = opts
 
+    const timeout = 10000
+
+    const requestOptions = {
+        json: !!json,
+        headers,
+        follow_max: 5,
+        open_timeout: timeout,
+        read_timeout: timeout,
+        rejectUnauthorized: false // TODO we need to pull this from `wsk`
+    }
+
+    debug('making request', method, url, body)
+
+    return withRetry((retry, iter) => {
+        return (!body ? needle(method, url, requestOptions) : needle(method, url, body, requestOptions))
+            .then(_ => { debug('got response', _.body); return _ })
+            .catch(err => {
+                const isNormalError = err && (err.statusCode === 400 || err.statusCode === 404 || err.statusCode === 409)
+                if (!isNormalError && (iter < 10)) {
+                    debug('retrying remote request', err)
+                    retry()
+                } else {
+                    console.error(`Error in rp with opts=${JSON.stringify(opts)}`)
+                    throw err
+                }
+            })
+    })
+        .then(_ => {
+            if (_.body && _.body.error) {
+                const { error } = _.body
+                debug('got error response', error)
+                throw new Error(error.error || error.message || error)
+            } else {
+                return _
+            }
+        })
+}
 
 module.exports = (commandTree, prequire) => {
     const wsk = prequire('/ui/commands/openwhisk-core')
@@ -258,7 +302,6 @@ const getImageDir = () => {
                 debug('get image locations:remote call')
                 return rt({
                     method: 'get',
-                    rejectUnauthorized: false, // TODO we need to pull this from `wsk`
                     url : data,    
                     json: true
                 });
@@ -393,8 +436,8 @@ const init = (kind, spinnerDiv) => {
                 // separate image name and tag. tag is always 'latest'. 
                 if(image.indexOf(':') !== -1) image = image.substring(0, image.indexOf(':'));
 
-                debug('checking to see if the image already exists locally')
-                if (imageList.find(({data}) => data.RepoTags && data.RepoTags.find(_ => _ === image))) {
+                debug('checking to see if the image already exists locally', image, imageList.map(_ => _.data.RepoTags.toString()))
+                if (imageList.find(({data}) => data.RepoTags && data.RepoTags.find(_ => _.match(new RegExp(`^${image}`))))) {
                     debug('skipping docker pull, as it is already local')
                     return Promise.all([image]);
                 }
@@ -402,10 +445,10 @@ const init = (kind, spinnerDiv) => {
                     debug('docker pull', image)
                     appendIncreContent(`Pulling image (one-time init)`, spinnerDiv);
                     return Promise.all([image, 
-                        docker.image.create({}, {fromImage: image, tag:'latest'})
-                        .then(stream => promisifyStream(stream))
-                        .then(() => docker.image.get(image).status())
-                    ]);
+                                        docker.image.create({}, {fromImage: image, tag:'latest'})
+                                        .then(stream => promisifyStream(stream))
+                                        .then(() => docker.image.get(image).status())
+                                       ])
                 }
             }
         })   
@@ -415,7 +458,7 @@ const init = (kind, spinnerDiv) => {
                 return Promise.resolve(d);
             }
             else{
-                debug('docker container create')
+                debug('docker container create', d[0], dockerConfig)
                 return docker.container.create(Object.assign({Image: d[0]}, dockerConfig))
             }
         })             
@@ -599,14 +642,12 @@ const runActionInDocker = (functionCode, functionKind, functionInput, isBinary, 
             start = Date.now();
             p = rt({
                 method: 'post',
-                url : 'http://localhost:8080/' + 'init',
-                agentOptions : {
-                    rejectUnauthorized : false
+                url: 'http://localhost:8080/' + 'init',
+                headers: {
+                    'Content-Type' : 'application/json',
                 },
-                headers : {
-                'Content-Type' : 'application/json',
-                },
-                json : {
+                json: true,
+                body: {
                     value: {
                         code: functionCode,
                         main: 'main',
@@ -624,13 +665,11 @@ const runActionInDocker = (functionCode, functionKind, functionInput, isBinary, 
             return rt({
                 method: 'post',
                 url: 'http://localhost:8080/' + 'run',
-                agentOptions : {
-                    rejectUnauthorized: false
-                },
                 headers: {
                     'Content-Type' : 'application/json',
                 },
-                json: {
+                json: true,
+                body: {
                     value: functionInput
                 }
             })
@@ -642,7 +681,7 @@ const runActionInDocker = (functionCode, functionKind, functionInput, isBinary, 
                 result: result.body, logs
             })
         })        
-        .catch(error => {          
+        .catch(error => {
             if(_container && _container.stop && _container.delete){
                 console.error(error);
                 kill(spinnerDiv).then(() => {
