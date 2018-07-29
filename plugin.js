@@ -23,7 +23,6 @@ const { Docker } = require('node-docker-api'),
       docs = require('./docs'),
       { kindToExtension } = require('./kinds'),
       docker = new Docker({ socketPath: '/var/run/docker.sock' }),
-      $ = require('jquery'),
       needle = require('needle'),
       withRetry = require('promise-retry'),
       fs = require('fs-extra'),
@@ -121,7 +120,7 @@ module.exports = (commandTree, prequire) => {
 
     if(typeof document === 'undefined' || typeof window === 'undefined') return; 
     
-    $(window).on('beforeunload', e => {
+    window.addEventListener('beforeunload', () => {
         if(_container){
             _container.stop();
             _container.delete({ force: true });
@@ -161,6 +160,28 @@ const local = wsk => (_a, _b, fullArgv, modules, rawCommandString, _2, argvWitho
         //
         // otherwise, we are good to go with executing the command
         //
+
+        // inject jquery; see https://stackoverflow.com/questions/32621988/electron-jquery-is-not-defined
+        // for the mess; jQuery refuses to populate the globals because it sees some *other* globals
+        // that electron has defined (due to nodeIntegration)
+        const ___nodeRequire = window.nodeRequire;
+        window.nodeRequire = require;
+        const ___require = window.require;
+        delete window.require;
+        const ___module = window.module;
+        delete window.module;
+        const ___exports = window.exports;
+        delete window.exports;
+
+        ui.injectScript('https://code.jquery.com/jquery-3.3.1.js')
+            .then(() => {
+                debug('got jquery?', window.global.jQuery)
+
+                // restore the global swap; see above
+                window.nodeRequire = ___nodeRequire;
+                window.require = ___require;
+                window.module = ___module;
+                window.exports = ___exports;
 
         // parse the "-p key value" inputs
         const input = {}
@@ -262,6 +283,7 @@ const local = wsk => (_a, _b, fullArgv, modules, rawCommandString, _2, argvWitho
             type: 'custom',
             content: returnDiv[0],
             modes
+        })
         })
     }
 }) /* end of local */
