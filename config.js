@@ -15,23 +15,23 @@
  */
 
 /**
- * Configuration of the local docker container 
+ * Configuration of the local docker container
  *
  */
 module.exports = {
-    ExposedPorts: {
-        "8080/tcp": {}, // 8080 is the port for api communications 
-        "5858/tcp": {}  // 5858 is the port for node debugger 
-    },
-    HostConfig:{
-        PortBindings: {
-            "8080/tcp": [
-                    { "HostPort": "8080"}
-            ],
-            "5858/tcp": [
-                    { "HostPort": "5858"}
-            ]
-        }
-    },
-    name: "shell-local"          
+  ExposedPorts: {
+    '8080/tcp': {}, // 8080 is the port for api communications
+    '5858/tcp': {} // 5858 is the port for node debugger
+  },
+  HostConfig: {
+    PortBindings: {
+      '8080/tcp': [
+        { 'HostPort': '8080'}
+      ],
+      '5858/tcp': [
+        { 'HostPort': '5858'}
+      ]
+    }
+  },
+  name: 'shell-local'
 }

@@ -14,29 +14,29 @@
  * limitations under the License.
  */
 
-const { title, overall:header, invoke, debug, kill, init, clean } = require('./strings')
+const { title, overall: header, invoke, debug, kill, init, clean } = require('./strings')
 
 /**
  * Docs for the plugin - total four commands
  *
  */
 module.exports = {
-    main: {
-        title,
-        header,
-        example: 'local <command>',
-        commandPrefix: 'local',
-        available: [{ command: 'invoke', docs: invoke },
-                    { command: 'debug', docs: debug },
-                    { command: 'init', docs: init },
-                    { command: 'kill', docs: kill, partial: true },      // this...
-                    { command: 'clean', docs: clean, partial: true }     // ... and this are dangerous, so make them partial
-                   ],
-        related: ['help']
-    },
-    invoke: 'local invoke <action|activationId> [-p param value]',
-    debug: 'local debug <action|activationId> [-p param value]',
-    init: 'local init <action>',
-    kill: 'local kill',
-    clean: 'local clean'
+  main: {
+    title,
+    header,
+    example: 'local <command>',
+    commandPrefix: 'local',
+    available: [{ command: 'invoke', docs: invoke },
+      { command: 'debug', docs: debug },
+      { command: 'init', docs: init },
+      { command: 'kill', docs: kill, partial: true }, // this...
+      { command: 'clean', docs: clean, partial: true } // ... and this are dangerous, so make them partial
+    ],
+    related: ['help']
+  },
+  invoke: 'local invoke <action|activationId> [-p param value]',
+  debug: 'local debug <action|activationId> [-p param value]',
+  init: 'local init <action>',
+  kill: 'local kill',
+  clean: 'local clean'
 }

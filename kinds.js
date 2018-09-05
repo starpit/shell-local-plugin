@@ -15,8 +15,8 @@
  */
 
 exports.kindToExtension = {
-    nodejs: '.js',
-    python: '.py',
-    swift: '.swift',
-    php: '.php'
+  nodejs: '.js',
+  python: '.py',
+  swift: '.swift',
+  php: '.php'
 }
