@@ -114,11 +114,11 @@ module.exports = (commandTree, prequire) => {
   const wsk = prequire('/ui/commands/openwhisk-core')
   const handler = local(wsk)
   commandTree.subtree('/local', { usage: docs.main })
-  commandTree.listen('/local/invoke', handler, Object.assign({docs: strings.invoke}, commandOptions))
-  commandTree.listen('/local/debug', handler, Object.assign({docs: strings.debug}, commandOptions))
-  commandTree.listen('/local/init', handler, Object.assign({docs: strings.init}, commandOptions))
-  commandTree.listen('/local/kill', handler, Object.assign({docs: strings.kill}, commandOptions))
-  commandTree.listen('/local/clean', handler, Object.assign({docs: strings.clean}, commandOptions))
+  commandTree.listen('/local/invoke', handler, Object.assign({ docs: strings.invoke }, commandOptions))
+  commandTree.listen('/local/debug', handler, Object.assign({ docs: strings.debug }, commandOptions))
+  commandTree.listen('/local/init', handler, Object.assign({ docs: strings.init }, commandOptions))
+  commandTree.listen('/local/kill', handler, Object.assign({ docs: strings.kill }, commandOptions))
+  commandTree.listen('/local/clean', handler, Object.assign({ docs: strings.clean }, commandOptions))
 
   if (typeof document === 'undefined' || typeof window === 'undefined') return
 
@@ -288,7 +288,7 @@ const local = wsk => (_a, _b, fullArgv, modules, rawCommandString, _2, argvWitho
 const fillInWithImplicitEntity = (ui, args, idx) => {
   const entity = ui.currentSelection()
   if (entity) {
-    const pathAnno = entity.annotations.find(({key}) => key === 'path')
+    const pathAnno = entity.annotations.find(({ key }) => key === 'path')
     const path = pathAnno ? `/${pathAnno.value}` : `/${entity.namespace}/${entity.name}`
     debug('implicit entity', path)
     args[idx] = path
@@ -372,7 +372,7 @@ const clean = (spinnerDiv, modules) => {
     .then(imageDir => Object.keys(imageDir).map(_ => imageDir[_]))
     .then(flatten)
     .then(x => { console.error(x); return x })
-    .then(images => Promise.all(images.map(({image}) => {
+    .then(images => Promise.all(images.map(({ image }) => {
       debug(`cleaning ${image}`)
       return docker.image.get(image).status().catch(squash) // catch here in case the container doesn't exist
         .then(image => {
@@ -450,14 +450,14 @@ const init = (modules, kind, spinnerDiv) => {
           if (image.indexOf(':') !== -1) image = image.substring(0, image.indexOf(':'))
 
           debug('checking to see if the image already exists locally', image, imageList.map(_ => _.data.RepoTags.toString()))
-          if (imageList.find(({data}) => data.RepoTags && data.RepoTags.find(_ => _.match(new RegExp(`^${image}`))))) {
+          if (imageList.find(({ data }) => data.RepoTags && data.RepoTags.find(_ => _.match(new RegExp(`^${image}`))))) {
             debug('skipping docker pull, as it is already local')
             return Promise.all([image])
           } else {
             debug('docker pull', image)
             appendIncreContent(modules, `Pulling image (one-time init)`, spinnerDiv)
             return Promise.all([image,
-              docker.image.create({}, {fromImage: image, tag: 'latest'})
+              docker.image.create({}, { fromImage: image, tag: 'latest' })
                 .then(stream => promisifyStream(stream))
                 .then(() => docker.image.get(image).status())
             ])
@@ -470,7 +470,7 @@ const init = (modules, kind, spinnerDiv) => {
           return Promise.resolve(d)
         } else {
           debug('docker container create', d[0], dockerConfig)
-          return docker.container.create(Object.assign({Image: d[0]}, dockerConfig))
+          return docker.container.create(Object.assign({ Image: d[0] }, dockerConfig))
         }
       })
       .then(d => {
@@ -498,7 +498,7 @@ const init = (modules, kind, spinnerDiv) => {
 const getActionNameAndInputFromActivations = (actId, spinnerDiv, modules) => {
   if (!actId.trim().match(uuidPattern)) {
     // then actId is really an action name, so there's nothing to do here
-    return Promise.resolve({name: actId, input: {}})
+    return Promise.resolve({ name: actId, input: {} })
   }
 
   appendIncreContent(modules, 'Retrieving activations', spinnerDiv)
@@ -525,7 +525,7 @@ const getActionNameAndInputFromActivations = (actId, spinnerDiv, modules) => {
         return Promise.all(a)
       })
       .then(arr => {
-        resolve({name: arr[0], input: arr[1] ? arr[1].response.result : {}})
+        resolve({ name: arr[0], input: arr[1] ? arr[1].response.result : {} })
       })
       .catch(e => reject(e))
   })
@@ -543,7 +543,7 @@ const getActionCode = (actionName, spinnerDiv, modules) => {
       if (action.parameters) {
         action.parameters.forEach(a => { param[a.name] = a.value })
       }
-      return Object.assign(action.exec, {param: param})
+      return Object.assign(action.exec, { param: param })
     })
 }
 
@@ -765,7 +765,7 @@ const runActionDebugger = (actionName, functionCode, functionKind, functionInput
   //
 
   // first, create a local temp folder
-  createTempFolder().then(({path: dirPath, cleanupCallback}) => {
+  createTempFolder().then(({ path: dirPath, cleanupCallback }) => {
     const containerFolderPath = dirPath.substring(dirPath.lastIndexOf('/') + 1)
 
     fs.outputFile(`${dirPath}/${debugFileName}`, fileCode, isBinary ? 'base64' : undefined) // write file to that local temp folder
@@ -980,12 +980,12 @@ const logLine = (type, line) => `${timestamp()} stdout: ${line.toString()}`
 }) */
 
 const createTempFolder = () => new Promise((resolve, reject) => {
-  tmp.dir({unsafeCleanup: true}, function _tempDirCreated (err, path, cleanupCallback) {
+  tmp.dir({ unsafeCleanup: true }, function _tempDirCreated (err, path, cleanupCallback) {
     if (err) {
       console.error(err)
       reject(new Error('Internal Error'))
     } else {
-      resolve({path: path, cleanupCallback: cleanupCallback})
+      resolve({ path: path, cleanupCallback: cleanupCallback })
     }
     // console.log('Dir: ', path);
   })
@@ -1032,7 +1032,7 @@ const displayAsActivation = (sessionType, { kind, actionName, name }, start, { a
  * Clean up the debugger UI
  *
  */
-const closeDebuggerUI = ({closeSidecar = false} = {}) => {
+const closeDebuggerUI = ({ closeSidecar = false } = {}) => {
   $('#debuggerDiv').remove()
 }
 
