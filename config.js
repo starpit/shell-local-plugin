@@ -26,10 +26,10 @@ module.exports = {
   HostConfig: {
     PortBindings: {
       '8080/tcp': [
-        { 'HostPort': '8080'}
+        { 'HostPort': '8080' }
       ],
       '5858/tcp': [
-        { 'HostPort': '5858'}
+        { 'HostPort': '5858' }
       ]
     }
   },
