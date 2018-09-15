@@ -110,8 +110,8 @@ const rt = opts => {
     })
 }
 
-module.exports = (commandTree, prequire) => {
-  const wsk = prequire('/ui/commands/openwhisk-core')
+module.exports = async (commandTree, prequire) => {
+  const wsk = await prequire('/ui/commands/openwhisk-core')
   const handler = local(wsk)
   commandTree.subtree('/local', { usage: docs.main })
   commandTree.listen('/local/invoke', handler, Object.assign({ docs: strings.invoke }, commandOptions))
